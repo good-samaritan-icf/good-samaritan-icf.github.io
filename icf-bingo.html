@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ICF Bingo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0a0a0a;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 8vw, 3.5rem);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    border: 1.5px solid rgba(255,255,255,0.25);
+    width: min(95vw, 560px);
+    margin-bottom: 2rem;
+  }
+
+  .cell {
+    border: 1px solid rgba(255,255,255,0.18);
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 6px;
+    font-size: clamp(0.45rem, 1.8vw, 0.7rem);
+    font-weight: 500;
+    line-height: 1.3;
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+    word-break: break-word;
+    hyphens: auto;
+  }
+
+  .header-row .cell {
+    font-size: clamp(1rem, 4vw, 1.6rem);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    aspect-ratio: unset;
+    padding: 0.6rem 0;
+    cursor: default;
+    background: transparent;
+  }
+
+  .cell:not(.header-row *):not(.free-space):hover {
+    background: rgba(255,255,255,0.08);
+  }
+
+  .cell.marked {
+    background: rgba(255,255,255,0.18);
+  }
+
+  .cell.free-space {
+    font-size: clamp(0.55rem, 2vw, 0.75rem);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.5);
+    cursor: default;
+  }
+
+  .cell.bingo-win {
+    background: rgba(255,255,255,0.3) !important;
+    outline: 2px solid rgba(255,255,255,0.7);
+    outline-offset: -2px;
+  }
+
+  #new-btn {
+    background: transparent;
+    color: #fff;
+    border: 1.5px solid rgba(255,255,255,0.35);
+    border-radius: 100px;
+    padding: 0.75rem 3rem;
+    font-size: 1.1rem;
+    font-weight: 500;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  #new-btn:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.6);
+  }
+
+  /* Overlay */
+  #overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75);
+    align-items: center; justify-content: center;
+    z-index: 50;
+  }
+  #overlay.visible { display: flex; }
+
+  #popup {
+    background: #1a1a1a;
+    border: 1.5px solid rgba(255,255,255,0.25);
+    border-radius: 16px;
+    padding: 3rem 2.5rem 2rem;
+    text-align: center;
+    max-width: 320px;
+    width: 90%;
+  }
+  #popup .emoji { font-size: 3rem; margin-bottom: 1rem; display: block; }
+  #popup h2 { font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; }
+  #popup p { color: rgba(255,255,255,0.6); margin-bottom: 1.5rem; font-size: 0.95rem; }
+  #close-btn {
+    background: #fff; color: #0a0a0a;
+    border: none; border-radius: 100px;
+    padding: 0.65rem 2rem; font-size: 1rem;
+    font-weight: 600; cursor: pointer;
+  }
+  #close-btn:hover { opacity: 0.85; }
+
+  /* Confetti canvas */
+  #confetti-canvas {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none; z-index: 49;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="confetti-canvas"></canvas>
+
+<div id="overlay">
+  <div id="popup">
+    <span class="emoji">&#127881;</span>
+    <h2>&#71;&#108;&#252;&#99;&#107;&#119;&#117;&#110;&#115;&#99;&#104;!</h2>
+    <p>Du hast BINGO!</p>
+    <button id="close-btn" onclick="closePopup()">Weiter spielen</button>
+  </div>
+</div>
+
+<h1>ICF BINGO</h1>
+<p>Klicke ein Feld an, wenn du den Satz, das Wort oder den Satzteil geh&ouml;rt hast.</p>
+<br>
+<div id="grid">
+  <div class="header-row" style="display:contents">
+    <div class="cell">B</div>
+    <div class="cell">I</div>
+    <div class="cell">N</div>
+    <div class="cell">G</div>
+    <div class="cell">O</div>
+  </div>
+  <div id="card-cells" style="display:contents"></div>
+</div>
+
+<button id="new-btn" onclick="generateCard()">Neu</button>
+
+<script>
+const PHRASES = [
+  "Die Worshiper gehen voran",
+  "Glaub mir kein Wort aber probiere es aus!",
+  "Daf\u00FCr brauchst du Kirche",
+  "Explore, die Kleingruppe auf Zeit",
+  "Aus einer Skala von 1-10 wie weit ist dein Herz auf?",
+  "Applaus im ICF-Stil",
+  "Worship sind gesungene Gebete",
+  "Jeder kann, keiner muss",
+  "Keiner ist heute Morgen gekommen und hat gesagt: ich brauche keinen Segen mehr",
+  "Bei mir ist es so, bei euch bestimmt anders",
+  "... wie niemals zuvor",
+  "Leb dein bestes Leben",
+  "Ach du ahnst es nicht",
+  "F\u00FChl dich frei!",
+  "Sei flexibel sagt die Bibel",
+  "Da wollen wir hin, sind wir aber nicht",
+  "Das ist eine geniale Sache",
+  "Brillant",
+  "Einer mehr f\u00FCr Jesus",
+  "Deep and fast",
+  "Muskel der Gro\u00DFz\u00FCgigkeit",
+  "Wir haben auf dem Herzen",
+  "Einer freut sich",
+  "Herzliche Einladung zum Deebrief",
+  "Wir haben dazu eine Folie",
+  "Clip/Film ab",
+  "Ach, auch mal wieder da",
+  "Der n\u00E4chste Punkt ist tief",
+  "Ohne Ostern w\u00E4re Weihnachten nur ein Kindergeburtstag",
+  "Das ist Matchentscheidend"
+];
+
+let cardPhrases = [];
+let marked = new Set();
+let bingoDone = false;
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function generateCard() {
+  marked = new Set();
+  bingoDone = false;
+  stopConfetti();
+  const shuffled = shuffle(PHRASES);
+  cardPhrases = shuffled.slice(0, 24);
+  cardPhrases.splice(12, 0, null); // FREE space at center
+  marked.add(12);
+  renderCard();
+}
+
+function renderCard() {
+  const container = document.getElementById('card-cells');
+  container.innerHTML = '';
+  cardPhrases.forEach((phrase, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    if (i === 12) {
+      cell.classList.add('free-space');
+      cell.textContent = 'FREE';
+    } else {
+      cell.textContent = phrase;
+      if (marked.has(i)) cell.classList.add('marked');
+      cell.addEventListener('click', () => toggleCell(i));
+    }
+    container.appendChild(cell);
+  });
+}
+
+function toggleCell(i) {
+  if (i === 12) return;
+  const cells = document.querySelectorAll('#card-cells .cell');
+  const cell = cells[i];
+  if (marked.has(i)) {
+    marked.delete(i);
+    cell.classList.remove('marked', 'bingo-win');
+  } else {
+    marked.add(i);
+    cell.classList.add('marked');
+  }
+  checkBingo();
+}
+
+const LINES = [
+  [0,1,2,3,4],[5,6,7,8,9],[10,11,12,13,14],[15,16,17,18,19],[20,21,22,23,24],
+  [0,5,10,15,20],[1,6,11,16,21],[2,7,12,17,22],[3,8,13,18,23],[4,9,14,19,24],
+  [0,6,12,18,24],[4,8,12,16,20]
+];
+
+function checkBingo() {
+  if (bingoDone) return;
+  const cells = document.querySelectorAll('#card-cells .cell');
+  for (const line of LINES) {
+    if (line.every(i => marked.has(i))) {
+      bingoDone = true;
+      line.forEach(i => cells[i].classList.add('bingo-win'));
+      setTimeout(() => {
+        startConfetti();
+        document.getElementById('overlay').classList.add('visible');
+      }, 350);
+      return;
+    }
+  }
+}
+
+function closePopup() {
+  document.getElementById('overlay').classList.remove('visible');
+  stopConfetti();
+}
+
+// --- Confetti ---
+const canvas = document.getElementById('confetti-canvas');
+const ctx = canvas.getContext('2d');
+let particles = [];
+let animId = null;
+const COLORS = ['#ffffff','#cccccc','#888888','#555555','#dddddd','#aaaaaa'];
+
+function startConfetti() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  particles = Array.from({length: 120}, () => ({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height - canvas.height,
+    r: Math.random() * 6 + 3,
+    vy: Math.random() * 2 + 2,
+    vx: Math.random() * 2 - 1,
+    tilt: Math.random() * 10 - 5,
+    tiltSpeed: Math.random() * 0.1 + 0.04,
+    tiltAngle: 0,
+    color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    shape: Math.random() > 0.4 ? 'rect' : 'circle'
+  }));
+  if (animId) cancelAnimationFrame(animId);
+  drawConfetti();
+}
+
+function drawConfetti() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  particles.forEach(p => {
+    p.tiltAngle += p.tiltSpeed;
+    p.y += p.vy;
+    p.x += p.vx + Math.sin(p.tiltAngle) * 0.8;
+    p.tilt = Math.sin(p.tiltAngle) * 8;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    if (p.shape === 'rect') {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.tiltAngle);
+      ctx.fillRect(-p.r, -p.r / 2, p.r * 2, p.r);
+      ctx.restore();
+    } else {
+      ctx.arc(p.x, p.y, p.r / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (p.y > canvas.height + 20) {
+      p.y = -10;
+      p.x = Math.random() * canvas.width;
+    }
+  });
+  animId = requestAnimationFrame(drawConfetti);
+}
+
+function stopConfetti() {
+  if (animId) { cancelAnimationFrame(animId); animId = null; }
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  particles = [];
+}
+
+generateCard();
+</script>
+</body>
+</html>
